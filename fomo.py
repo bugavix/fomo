@@ -36,13 +36,25 @@ class FOMOHead(nn.Module):
     def forward(self, x):
         return self.head(x)
 
-model = FOMOHead(in_channels=32, num_classes=3)
+# Final Combined Model
+class FOMOMobileNetV2(nn.Module):
+    def __init__(self, num_classes: int):
+        super(FOMOMobileNetV2, self).__init__()
+        self.backbone = MobileNetV2Backbone()
+        self.head = FOMOHead(32, num_classes)
+
+    def forward(self, x):
+        features = self.backbone(x)
+        output = self.head(features)
+        return output  # Shape: [B, num_classes, H/8, W/8]
+
+model = FOMOMobileNetV2(num_classes=1)
 model.eval()
 
 from torchsummary import summary
-summary(model, input_size=(32, 24, 24))
+summary(model, input_size=(3, 224, 224))
 
-dummy_input = torch.randn(1, 32, 24, 24)
+dummy_input = torch.randn(1, 3, 224, 224)
 
 with torch.no_grad():
     output = model(dummy_input)
