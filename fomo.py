@@ -24,10 +24,25 @@ class MobileNetV2Backbone(nn.Module):
     def forward(self, x):
         return self.features(x)
 
-model = MobileNetV2Backbone()
+class FOMOHead(nn.Module):
+    def __init__(self, in_channels: int, num_classes: int):
+        super(FOMOHead, self).__init__()
+        self.head = nn.Sequential(
+            nn.Conv2d(in_channels, 32, kernel_size=1, stride=1),  # Keeps spatial size
+            nn.ReLU(),
+            nn.Conv2d(32, num_classes, kernel_size=1)  # 1x1 conv for class logits
+        )
+
+    def forward(self, x):
+        return self.head(x)
+
+model = FOMOHead(in_channels=32, num_classes=3)
 model.eval()
 
-dummy_input = torch.randn(1, 3, 224, 224)
+from torchsummary import summary
+summary(model, input_size=(32, 24, 24))
+
+dummy_input = torch.randn(1, 32, 24, 24)
 
 with torch.no_grad():
     output = model(dummy_input)
