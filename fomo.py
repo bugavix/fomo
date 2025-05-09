@@ -7,7 +7,7 @@ model = FOMOMobileNetV2(num_classes=1, weights=MobileNet_V2_Weights.DEFAULT, fil
 model.eval()
 
 from torchsummary import summary
-summary(model, input_size=(3, 516, 516))
+summary(model, input_size=(3, 224, 224))
 
 dummy_input = torch.randn(1, 3, 224, 224)
 
@@ -15,3 +15,10 @@ with torch.no_grad():
     output = model(dummy_input)
 
 print("Output shape:", output.shape)
+
+from fvcore.nn import FlopCountAnalysis
+
+flops = FlopCountAnalysis(model, dummy_input)
+print("Total FLOPs:", flops.total())
+print("FLOPs by operator:")
+print(flops.by_operator())
