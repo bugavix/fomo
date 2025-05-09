@@ -1,2 +1,4 @@
 fomo_env
 **/__pycache__
+*.pth
+coco/
