@@ -3,12 +3,15 @@ import random
 import torch
 from torchvision.datasets import CocoDetection
 from torchvision import transforms
+from torchvision.models import MobileNet_V2_Weights
 from torch.utils.data import Dataset, DataLoader, Subset
 from models_architecture.models.fomo_mobilenetv2 import FOMOMobileNetV2
 
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
-    transforms.ToTensor()
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std =[0.229, 0.224, 0.225])
 ])
 
 # Set to your local COCO path
@@ -19,7 +22,7 @@ coco_val = CocoDetection(
     transform=transform
 )
 
-subset_size = 1000
+subset_size = 5000
 indices = list(range(len(coco_val)))
 random.shuffle(indices)
 subset = Subset(coco_val, indices[:subset_size])
@@ -35,13 +38,23 @@ def generate_heatmap_from_coco(boxes, labels, image_size=(224, 224), grid_size=8
     for box, label in zip(boxes, labels):
         if label != 1:  # 1 = 'person' in COCO
             continue
+        
         x, y, w, h = box
-        x_center = x + w / 2
-        y_center = y + h / 2
-        grid_x = int((x_center / image_size[0]) * heatmap.shape[2])
-        grid_y = int((y_center / image_size[1]) * heatmap.shape[1])
-        if 0 <= grid_x < heatmap.shape[2] and 0 <= grid_y < heatmap.shape[1]:
-            heatmap[0, grid_y, grid_x] = 1.0
+
+        # Compute box corners
+        x0 = int(x // grid_size)
+        y0 = int(y // grid_size)
+        x1 = int((x + w) // grid_size)
+        y1 = int((y + h) // grid_size)
+
+        # Clamp to heatmap bounds
+        x0 = max(0, min(x0, heatmap.shape[2] - 1))
+        x1 = max(0, min(x1, heatmap.shape[2] - 1))
+        y0 = max(0, min(y0, heatmap.shape[1] - 1))
+        y1 = max(0, min(y1, heatmap.shape[1] - 1))
+
+        # Fill the heatmap region
+        heatmap[0, x0:x1, y0:y1] = 1.0
     return heatmap
 
 class FOMOCocoDataset(Dataset):
@@ -58,11 +71,11 @@ class FOMOCocoDataset(Dataset):
         heatmap = generate_heatmap_from_coco(boxes, labels)
         return img, heatmap
 
-train_loader = DataLoader(FOMOCocoDataset(train_set), batch_size=8, shuffle=True)
-val_loader   = DataLoader(FOMOCocoDataset(val_set), batch_size=8)
-test_loader  = DataLoader(FOMOCocoDataset(test_set), batch_size=8)
+train_loader = DataLoader(FOMOCocoDataset(train_set), batch_size=16, shuffle=True)
+val_loader   = DataLoader(FOMOCocoDataset(val_set), batch_size=16)
+test_loader  = DataLoader(FOMOCocoDataset(test_set), batch_size=16)
 
-model = FOMOMobileNetV2(num_classes=1)  # defined earlier
+model = FOMOMobileNetV2(num_classes=1, weights=MobileNet_V2_Weights.DEFAULT)  # defined earlier
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 criterion = torch.nn.BCEWithLogitsLoss()
 
@@ -96,7 +109,7 @@ for epoch in range(epoch_number):  # Running epochs
             loss = criterion(preds, heatmaps)
             total_val_loss += loss.item()
 
-    print(f"Epoch {epoch+1} | Train Loss: {total_train_loss:.4f} | Val Loss: {total_val_loss:.4f}")
+    print(f"Epoch {epoch+1} | Train Loss: {total_train_loss/subset_size:.4f} | Val Loss: {total_val_loss/subset_size:.4f}")
 
     # Save the best model (if validation loss decreases)
     if total_val_loss < best_val_loss:
@@ -131,7 +144,7 @@ def evaluate_fomo(model, dataloader, threshold=0.5):
     f1_score  = 2 * (precision * recall) / (precision + recall + 1e-6)
     accuracy  = (TP + TN) / (TP + TN + FP + FN)
 
-    print("\n🎯 Evaluation Metrics:")
+    print("\nEvaluation Metrics:")
     print(f"Accuracy : {accuracy*100:.2f}%")
     print(f"Precision: {precision:.4f}")
     print(f"Recall   : {recall:.4f}")
@@ -141,4 +154,4 @@ def evaluate_fomo(model, dataloader, threshold=0.5):
     return {"accuracy": accuracy, "precision": precision, "recall": recall, "f1": f1_score}
 
 # Final evaluation
-evaluate_fomo(model, test_loader)
+evaluate_fomo(model, test_loader, 0.3)
